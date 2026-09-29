@@ -1,0 +1,59 @@
+name: 3-5 Percent Short Monitor
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: short35-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    # v1.8 READY / ENTRY_CHECK 會在同一個 runner 內
+    # 進行最多 8 輪、每輪 60 秒的快速巡查。
+    # 原本 10 分鐘 timeout 太緊，改成 15 分鐘保留餘裕。
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore short35 state
+        uses: actions/cache/restore@v4
+        with:
+          path: .short35_state
+          key: short35-state-${{ github.run_id }}
+          restore-keys: |
+            short35-state-
+
+      - name: Run short35 monitor
+        env:
+          NTFY_TOPIC_SHORT35: ${{ secrets.NTFY_TOPIC_SHORT35 }}
+          NTFY_SERVER: https://ntfy.sh
+
+          # short35_monitor.py 用這個判斷是否為手動執行，
+          # 手動執行時可強制送 summary。
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+
+        run: |
+          python short35_monitor.py
+
+      - name: Save short35 state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .short35_state
+          key: short35-state-${{ github.run_id }}
